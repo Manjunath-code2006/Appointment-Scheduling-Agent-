@@ -1,0 +1,77 @@
+version: '3.9'
+
+services:
+
+  # ── MySQL ──────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: appointment_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE:      appointment_db
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_USER:          ${DB_USER:-appuser}
+      MYSQL_PASSWORD:      ${DB_PASSWORD:-apppassword}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app-network
+
+  # ── Spring Boot Backend ────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: appointment_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL:      jdbc:mysql://db:3306/appointment_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-appuser}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-apppassword}
+      APP_JWT_SECRET:             ${JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+      APP_JWT_EXPIRATION_MS:      86400000
+      APP_JWT_REFRESH_EXPIRATION_MS: 604800000
+      SPRING_MAIL_HOST:           ${MAIL_HOST:-smtp.gmail.com}
+      SPRING_MAIL_PORT:           ${MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME:       ${MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD:       ${MAIL_PASSWORD:-}
+      APP_FRONTEND_URL:           http://localhost:5173
+      APP_NAME:                   "Appointment Agent"
+    ports:
+      - "8080:8080"
+    volumes:
+      - backend_logs:/app/logs
+    networks:
+      - app-network
+
+  # ── React Frontend ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: appointment_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - app-network
+
+volumes:
+  mysql_data:
+  backend_logs:
+
+networks:
+  app-network:
+    driver: bridge
